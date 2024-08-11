@@ -1,0 +1,55 @@
+# SPDX-FileCopyrightText: 2024 Andrew Pantuso <ajpantuso@gmail.com>
+#
+# SPDX-License-Identifier: Apache-2.0
+
+repos:
+# Fixers
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.6.0
+  hooks:
+  - id: trailing-whitespace
+  - id: end-of-file-fixer
+  - id: mixed-line-ending
+    args: [--fix=lf]
+- repo: local
+  hooks:
+  - id: go-fmt
+    name: go-fmt
+    entry: go fmt
+    language: system
+    pass_filenames: false
+    always_run: true
+    require_serial: true
+  - id: go-mod-tidy
+    name: go-mod-tidy
+    entry: go mod tidy
+    language: system
+    pass_filenames: false
+    always_run: true
+    require_serial: true
+  - id: go-mod-verify
+    name: go-mod-verify
+    entry: go mod verify
+    language: system
+    pass_filenames: false
+    always_run: true
+    require_serial: true
+
+# Checkers
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.6.0
+  hooks:
+  - id: check-added-large-files
+  - id: check-case-conflict
+  - id: check-merge-conflict
+  - id: check-symlinks
+  - id: check-yaml
+  - id: detect-private-key
+- repo: https://github.com/golangci/golangci-lint
+  rev: v1.59.1
+  hooks:
+  - id: golangci-lint
+- repo: https://github.com/fsfe/reuse-tool
+  rev: v4.0.3
+  hooks:
+  - id: reuse
