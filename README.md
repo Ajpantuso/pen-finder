@@ -10,6 +10,15 @@ SPDX-License-Identifier: Apache-2.0
 
 - Unify scraper logic
 - Implement remaining scrapers
+  - Bertram's
+  - Fahrney's
+  - Dromgoole's
+  - Truphae
+  - PenReam
+  - ThePenMarket
+  - ItalianPens
+  - Etsy
+  - eBay
 - Add tests
 - Scrape metrics with prometheus to establish rules
 - Determine how to propagate alerts

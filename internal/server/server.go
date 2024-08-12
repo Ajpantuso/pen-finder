@@ -13,10 +13,9 @@ import (
 	"slices"
 	"time"
 
+	"github.com/ajpantuso/pen-finder/api"
 	"github.com/ajpantuso/pen-finder/internal/recorder"
 	"github.com/ajpantuso/pen-finder/internal/scraper"
-	"github.com/ajpantuso/pen-finder/internal/scraper/chatterley"
-	"github.com/ajpantuso/pen-finder/internal/scraper/fph"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 )
@@ -93,7 +92,7 @@ func (s *DefaultServer) handleGetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := GetRunResponse{
+	res := api.GetRunResponse{
 		ID:          runID,
 		Status:      entry.Status,
 		LastUpdated: entry.LastUpdated,
@@ -111,16 +110,10 @@ func (s *DefaultServer) handleGetRun(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type GetRunResponse struct {
-	ID          uuid.UUID `json:"id"`
-	Status      RunStatus `json:"status"`
-	LastUpdated time.Time `json:"lastUpdated"`
-}
-
 func (s *DefaultServer) handleRunRequest(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
-	var req RunRequest
+	var req api.PostRunRequest
 
 	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(&req); err != nil {
@@ -132,7 +125,7 @@ func (s *DefaultServer) handleRunRequest(w http.ResponseWriter, r *http.Request)
 	scrapers := req.Scrapers
 
 	runID := uuid.New()
-	res := RunResponse{
+	res := api.PostRunResponse{
 		RunID: runID,
 	}
 
@@ -148,7 +141,7 @@ func (s *DefaultServer) handleRunRequest(w http.ResponseWriter, r *http.Request)
 		s.cfg.Logger.Error(err, "writing response")
 	}
 
-	s.cfg.Cache.Upsert(runID, RunStatusInProgress)
+	s.cfg.Cache.Upsert(runID, api.RunStatusInProgress)
 
 	ctx := context.Background()
 	cancel := func() {}
@@ -163,33 +156,23 @@ func (s *DefaultServer) handleRunRequest(w http.ResponseWriter, r *http.Request)
 		scrapeOpts = append(scrapeOpts, scraper.WithRecorder{Recorder: s.cfg.Recorder})
 	}
 
-	s.cfg.Logger.Info("running scrappers", "runID", runID)
+	s.cfg.Logger.Info("running scrappers", "runID", runID, "scrapers", scrapers)
 	go func() {
 		if err := s.cfg.Runner.Run(ctx, scraper.WithScrapers(mapScrapers(scrapers)), scraper.WithScrapeOptions(scrapeOpts)); err != nil {
-			s.cfg.Cache.Upsert(runID, RunStatusFailed)
+			s.cfg.Cache.Upsert(runID, api.RunStatusFailed)
 			s.cfg.Logger.Error(err, "running scrapers")
 		}
 
-		s.cfg.Cache.Upsert(runID, RunStatusSuccess)
+		s.cfg.Cache.Upsert(runID, api.RunStatusSuccess)
 	}()
 }
 
-func mapScrapers(scrapers []Scraper) []scraper.Scraper {
+func mapScrapers(scrapers []api.Scraper) []scraper.Scraper {
 	if len(scrapers) < 1 {
 		return []scraper.Scraper{
-			fph.NewScraper(
-				"https://fountainpenhospital.com/collections/back-room-1",
-				[]*regexp.Regexp{
-					regexp.MustCompile(`https://fountainpenhospital\.com/collections/back-room-1.*`),
-				},
-			),
-			chatterley.NewScraper(
-				"https://chatterleyluxuries.com/product-category/pens/consignments",
-				[]*regexp.Regexp{
-					regexp.MustCompile(`https://chatterleyluxuries\.com/product-category/pens/consignments.*`),
-					regexp.MustCompile(`https://chatterleyluxuries\.com/product/.*`),
-				},
-			),
+			newChatterlyScraper(),
+			newFPHScraper(),
+			newTruphaeScraper(),
 		}
 	}
 
@@ -199,59 +182,18 @@ func mapScrapers(scrapers []Scraper) []scraper.Scraper {
 	result := make([]scraper.Scraper, 0, len(scrapers))
 	for _, s := range scrapers {
 		switch s {
-		case ScraperFPH:
-			result = append(result, fph.NewScraper(
-				"https://fountainpenhospital.com/collections/back-room-1",
-				[]*regexp.Regexp{
-					regexp.MustCompile(`https://fountainpenhospital\.com/collections/back-room-1.*`),
-				},
-			),
-			)
-		case ScraperChatterly:
-			result = append(result, chatterley.NewScraper(
-				"https://chatterleyluxuries.com/product-category/pens/consignments",
-				[]*regexp.Regexp{
-					regexp.MustCompile(`https://chatterleyluxuries\.com/category/pens/consignments/.*`),
-					regexp.MustCompile(`https://chatterleyluxuries\.com/product/.*`),
-				},
-			),
-			)
+		case api.ScraperChatterly:
+			result = append(result, newChatterlyScraper())
+		case api.ScraperFPH:
+			result = append(result, newFPHScraper())
+		case api.ScraperTruphae:
+			result = append(result, newTruphaeScraper())
 		default:
 			continue
 		}
 	}
 
 	return result
-}
-
-type RunRequest struct {
-	Scrapers []Scraper `json:"scrapers"`
-}
-
-type Scraper string
-
-func (s *Scraper) UnmarshalJSON(data []byte) error {
-	if n := len(data); n > 1 && (data[0] == '"' && data[n-1] == '"') {
-		return json.Unmarshal(data, (*string)(s))
-	}
-	switch Scraper(data) {
-	case ScraperFPH:
-		*s = ScraperFPH
-	default:
-		*s = ScraperUnknown
-	}
-
-	return nil
-}
-
-const (
-	ScraperUnknown   Scraper = "unknown"
-	ScraperFPH       Scraper = "fountain pen hospital"
-	ScraperChatterly Scraper = "chatterly luxuries"
-)
-
-type RunResponse struct {
-	RunID uuid.UUID `json:"runID"`
 }
 
 type DefaultServerConfig struct {
@@ -285,4 +227,40 @@ func (c *DefaultServerConfig) Default() {
 
 type DefaultServerOption interface {
 	ConfigureDefaultServer(*DefaultServerConfig)
+}
+
+func newChatterlyScraper() *scraper.SimpleScraper {
+	return scraper.NewSimpleScraper(
+		scraper.WithBaseURL("https://chatterleyluxuries.com/product-category/pens/consignments"),
+		scraper.WithFilters{
+			regexp.MustCompile(`https://chatterleyluxuries\.com/product-category/pens/consignments.*`),
+			regexp.MustCompile(`https://chatterleyluxuries\.com/product/.*`),
+		},
+		scraper.WithSourceName("chatterly_luxuries"),
+		scraper.WithProcessor{Processor: scraper.NewSimpleProcessor(
+			scraper.WithBaseURL("https://chatterleyluxuries.com"),
+			scraper.WithProductPathPrefix("/product/"),
+		)})
+}
+
+func newFPHScraper() *scraper.SimpleScraper {
+	return scraper.NewSimpleScraper(
+		scraper.WithBaseURL("https://fountainpenhospital.com/collections/back-room-1"),
+		scraper.WithFilters{regexp.MustCompile(`https://fountainpenhospital\.com/collections/back-room-1.*`)},
+		scraper.WithSourceName("chatterly_luxuries"),
+		scraper.WithProcessor{Processor: scraper.NewSimpleProcessor(
+			scraper.WithBaseURL("https://fountainpenhospital.com"),
+			scraper.WithProductPathPrefix("/collections/back-room-1/products/"),
+		)})
+}
+
+func newTruphaeScraper() *scraper.SimpleScraper {
+	return scraper.NewSimpleScraper(
+		scraper.WithBaseURL("https://truphaeinc.com/collections/pre-owned-pens"),
+		scraper.WithFilters{regexp.MustCompile(`https://truphaeinc\.com/collections/pre-owned-pens.*`)},
+		scraper.WithSourceName("truphae"),
+		scraper.WithProcessor{Processor: scraper.NewSimpleProcessor(
+			scraper.WithBaseURL("https://truphaeinc.com/"),
+			scraper.WithProductPathPrefix("/collections/pre-owned-pens/products/"),
+		)})
 }

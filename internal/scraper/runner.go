@@ -30,18 +30,6 @@ type RunOption interface {
 	ConfigureRun(*RunConfig)
 }
 
-type WithScrapers []Scraper
-
-func (w WithScrapers) ConfigureRun(c *RunConfig) {
-	c.Scrapers = append(c.Scrapers, w...)
-}
-
-type WithScrapeOptions []ScrapeOption
-
-func (w WithScrapeOptions) ConfigureRun(c *RunConfig) {
-	c.ScrapeOptions = append(c.ScrapeOptions, w...)
-}
-
 func NewParallelRunner() *ParallelRunner {
 	return &ParallelRunner{}
 }

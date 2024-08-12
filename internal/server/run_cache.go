@@ -8,26 +8,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ajpantuso/pen-finder/api"
 	"github.com/google/uuid"
 )
 
 type RunCache interface {
 	Get(uuid.UUID) (RunCacheEntry, bool)
-	Upsert(uuid.UUID, RunStatus)
+	Upsert(uuid.UUID, api.RunStatus)
 }
 
 type RunCacheEntry struct {
-	Status      RunStatus
+	Status      api.RunStatus
 	LastUpdated time.Time
 }
-
-type RunStatus string
-
-const (
-	RunStatusInProgress RunStatus = "in progress"
-	RunStatusSuccess    RunStatus = "success"
-	RunStatusFailed     RunStatus = "failed"
-)
 
 func NewThreadSafeRunCache() *ThreadSafeRunCache {
 	return &ThreadSafeRunCache{
@@ -50,7 +43,7 @@ func (c *ThreadSafeRunCache) Get(id uuid.UUID) (RunCacheEntry, bool) {
 	return entry, ok
 }
 
-func (c *ThreadSafeRunCache) Upsert(id uuid.UUID, status RunStatus) {
+func (c *ThreadSafeRunCache) Upsert(id uuid.UUID, status api.RunStatus) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
